@@ -1,0 +1,361 @@
+---
+title: "Diabetes Prevalence in U.S. Adults: Men vs. Women Across States"
+subtitle: "PROPEL- Final Project"
+author: "Yeison Samayoa Hernandez"
+date: "November 2nd, 2026"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 7, fig.height = 4.5)
+
+# prints small p-values like 1.8e-08 instead of 0
+fmt_p <- function(p) if (p < 0.0001) format(p, digits = 2, scientific = TRUE) else formatC(p, format = "f", digits = 4)
+```
+
+## Introduction
+
+Diabetes is one of the most common chronic diseases in the U.S. For this project I wanted to know if diabetes is more common in men or in women, and whether that pattern holds up across all states. I also looked at how a state's adult obesity rate relates to its diabetes rate, since obesity is a well-known risk factor for type 2 diabetes.
+
+**Research question:** In 2022, did adult men and women in U.S. states have different diabetes prevalence?
+
+## Packages
+
+```{r}
+library(tidyverse)
+```
+
+## The dataset
+
+The data come from the **U.S. Chronic Disease Indicators (CDI)** published by the CDC on Data.gov (https://catalog.data.gov/dataset/u-s-chronic-disease-indicators). It pulls together state-level estimates for many chronic disease topics from surveys like BRFSS and from vital statistics. Every row is a summary number (for example, the percent of adults in a state with diabetes), so there is no individual-level or private health information in it.
+
+The file was downloaded from Data.gov as `export.csv`. I saved it gzip-compressed (`data/export.csv.gz`) so it fits on GitHub. `read_csv()` opens the compressed file directly.
+
+```{r}
+cdi <- read_csv("data/export.csv.gz", guess_max = 100000)
+
+dim(cdi)
+```
+
+The full dataset has 398793 rows and 34 columns, covering diabets related topics.
+
+```{r}
+cdi %>%
+  count(Topic, sort = TRUE)
+```
+
+## Cleaning and filtering
+
+The dataset mixes many different indicators, units, and groupings, so I only kept what I needed:
+
+- **Question:** "Diabetes among adults" (plus "Obesity among adults" for the regression section)
+- **Data source:** BRFSS (both questions come from this telephone survey)
+- **Year:** 2022, the most recent year with values for all 50 states and DC
+- **Value type:** age-adjusted prevalence (%). Age-adjusting matters here because states have different age structures, and diabetes is much more common in older adults.
+- **Locations:** the 50 states + DC. I removed the national total ("US") and the territories (Guam, Puerto Rico, Virgin Islands) so each row is one state.
+
+```{r}
+diabetes <- cdi %>%
+  filter(Question == "Diabetes among adults",
+         DataSource == "BRFSS",
+         YearStart == 2022,
+         DataValueType == "Age-adjusted Prevalence",
+         !LocationAbbr %in% c("US", "GU", "PR", "VI")) %>%
+  select(LocationAbbr, LocationDesc, StratificationCategory1, Stratification1,
+         DataValue, LowConfidenceLimit, HighConfidenceLimit)
+
+count(diabetes, StratificationCategory1)
+```
+
+For the sex comparison I kept the Male and Female rows and checked for missing values.
+
+```{r}
+diabetes_sex <- diabetes %>%
+  filter(StratificationCategory1 == "Sex") %>%
+  rename(state = LocationAbbr, sex = Stratification1, prevalence = DataValue)
+
+sum(is.na(diabetes_sex$prevalence))
+n_distinct(diabetes_sex$state)
+```
+
+There are no missing values, and there are `r n_distinct(diabetes_sex$state)` locations with one value for men and one for women.
+
+## Descriptive analysis
+
+### Variables
+
+- `state` (categorical): 50 states + DC
+- `sex` (categorical): Male or Female
+- `prevalence` (continuous): age-adjusted percent of adults who have ever been told by a doctor they have diabetes
+
+### Summary statistics by sex
+
+```{r}
+sex_summary <- diabetes_sex %>%
+  group_by(sex) %>%
+  summarize(n_states = n(),
+            mean = mean(prevalence),
+            sd = sd(prevalence),
+            median = median(prevalence),
+            min = min(prevalence),
+            max = max(prevalence))
+
+sex_summary
+```
+
+```{r, include = FALSE}
+male_mean <- sex_summary$mean[sex_summary$sex == "Male"]
+female_mean <- sex_summary$mean[sex_summary$sex == "Female"]
+```
+
+Across states, the average diabetes prevalence was `r round(male_mean, 1)`% for men and `r round(female_mean, 1)`% for women.
+
+### Bar plot: mean prevalence by sex
+
+```{r}
+ggplot(sex_summary, aes(x = sex, y = mean, fill = sex)) +
+  geom_col(width = 0.6) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width = 0.15) +
+  scale_fill_manual(values = c("Female" = "#E07A5F", "Male" = "#3D5A80")) +
+  labs(title = "Average diabetes prevalence across states, 2022",
+       x = "Sex", y = "Age-adjusted prevalence (%)",
+       caption = "Bars = mean of 51 states (incl. DC); error bars = ± 1 SD") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+### Histogram: overall state diabetes prevalence
+
+```{r}
+diabetes_overall <- diabetes %>%
+  filter(StratificationCategory1 == "Overall") %>%
+  rename(state = LocationAbbr, prevalence = DataValue)
+
+summary(diabetes_overall$prevalence)
+
+ggplot(diabetes_overall, aes(x = prevalence)) +
+  geom_histogram(binwidth = 0.75, fill = "#3D5A80", color = "white") +
+  labs(title = "Distribution of adult diabetes prevalence by state, 2022",
+       x = "Age-adjusted prevalence (%)", y = "Number of states") +
+  theme_minimal()
+```
+
+```{r, include = FALSE}
+top3 <- diabetes_overall %>% arrange(desc(prevalence)) %>% head(3)
+low3 <- diabetes_overall %>% arrange(prevalence) %>% head(3)
+```
+
+State diabetes prevalence ranged from `r min(diabetes_overall$prevalence)`% to `r max(diabetes_overall$prevalence)`%, with a median of `r median(diabetes_overall$prevalence)`%. The distribution is roughly bell-shaped with a slight tail toward higher values. The highest states were `r paste(top3$LocationDesc, collapse = ", ")`, and the lowest were `r paste(low3$LocationDesc, collapse = ", ")`.
+
+### Comparison plot: men vs. women within each state
+
+Because every state has a value for both sexes, the most useful picture is to connect the two values for each state.
+
+```{r, fig.height = 5}
+ggplot(diabetes_sex, aes(x = sex, y = prevalence)) +
+  geom_line(aes(group = state), color = "grey70") +
+  geom_point(aes(color = sex), size = 2) +
+  geom_boxplot(aes(fill = sex), width = 0.25, alpha = 0.3, outlier.shape = NA) +
+  scale_color_manual(values = c("Female" = "#E07A5F", "Male" = "#3D5A80")) +
+  scale_fill_manual(values = c("Female" = "#E07A5F", "Male" = "#3D5A80")) +
+  labs(title = "Diabetes prevalence for women and men in each state, 2022",
+       subtitle = "Each grey line connects the two values for one state",
+       x = "Sex", y = "Age-adjusted prevalence (%)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+**Main descriptive findings:** On average, diabetes was more common in men than in women, and most of the grey lines slope upward from women to men. Diabetes prevalence also varied a lot between states, and most of the highest rates were in Southern states.
+
+## Inferential analysis
+
+### Hypotheses
+
+Each state gives two values (men and women), so the two groups are **paired** by state and not independent. That means I need a paired test, comparing the difference within each state.
+
+- **Null hypothesis (H0):** Within states, there is no difference in diabetes prevalence between men and women (the typical male minus female difference is 0).
+- **Alternative hypothesis (H1):** Within states, diabetes prevalence differs between men and women.
+
+I used α = 0.05.
+
+### Calculating the paired differences
+
+```{r}
+diabetes_wide <- diabetes_sex %>%
+  select(state, LocationDesc, sex, prevalence) %>%
+  pivot_wider(names_from = sex, values_from = prevalence) %>%
+  mutate(difference = Male - Female)
+
+head(diabetes_wide)
+
+summary(diabetes_wide$difference)
+sum(diabetes_wide$difference > 0)
+```
+
+```{r, include = FALSE}
+n_male_higher <- sum(diabetes_wide$difference > 0)
+lowest_diff <- diabetes_wide %>% arrange(difference) %>% head(1)
+```
+
+Men had a higher prevalence than women in **46 of the 51 locations**. The few places where women had higher prevalence are LA, MS, MI, AL, IA.
+### Checking assumptions
+
+A paired t-test assumes the paired differences are roughly normally distributed. I checked this with a histogram, a Q-Q plot, and the Shapiro-Wilk test.
+
+```{r}
+ggplot(diabetes_wide, aes(x = difference)) +
+  geom_histogram(binwidth = 0.5, fill = "#98C1D9", color = "white") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(title = "Male minus female diabetes prevalence, by state",
+       x = "Difference (percentage points)", y = "Number of states") +
+  theme_minimal()
+
+ggplot(diabetes_wide, aes(sample = difference)) +
+  stat_qq() +
+  stat_qq_line(color = "red") +
+  labs(title = "Q-Q plot of the paired differences") +
+  theme_minimal()
+
+shapiro_diff <- shapiro.test(diabetes_wide$difference)
+shapiro_diff
+```
+
+The Shapiro-Wilk p-value is 0.0008018, which is below 0.05, so the differences are not normally distributed. The histogram shows a few states on the left side where women had higher prevalence than men.
+
+Because the normality assumption is not met, I used the **Wilcoxon signed-rank test** as my main test. It is the non-parametric version of the paired t-test and does not need normal data. With 51 pairs the paired t-test is fairly robust, so I also ran it to check that both tests agree.
+
+### Wilcoxon signed-rank test (main test)
+
+```{r}
+wilcox_result <- wilcox.test(diabetes_wide$Male, diabetes_wide$Female,
+                             paired = TRUE)
+wilcox_result
+```
+
+### Paired t-test (check)
+
+```{r}
+t_result <- t.test(diabetes_wide$Male, diabetes_wide$Female, paired = TRUE)
+t_result
+```
+
+### Results
+
+- **Wilcoxon signed-rank test:** V = [insert Wilcoxon V value], p = [insert Wilcoxon p-value]
+- **Paired t-test:** t(50) = 6.70, p = 1.77 × 10⁻⁸
+- **Median difference (male - female):** [insert median difference] percentage points
+- **Mean difference:** 1.22 percentage points (95% CI: 0.86 to 1.59)
+
+### Visualization supporting the test
+
+```{r}
+ggplot(diabetes_wide, aes(x = reorder(state, difference), y = difference,
+                          fill = difference > 0)) +
+  geom_col() +
+  geom_hline(yintercept = 0) +
+  scale_fill_manual(values = c("TRUE" = "#3D5A80", "FALSE" = "#E07A5F"),
+                    labels = c("TRUE" = "Men higher", "FALSE" = "Women higher"),
+                    name = NULL) +
+  labs(title = "Difference in diabetes prevalence (men minus women), 2022",
+       x = "State", y = "Difference (percentage points)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, size = 6),
+        legend.position = "top")
+```
+
+### Interpretation
+
+The p-value is far below 0.05, so I reject the null hypothesis. In 2022, adult men had a higher diabetes prevalence than adult women in most U.S. states. Both tests gave the same conclusion.
+
+
+### Type I and Type II errors
+
+- **Type I error:** rejecting H0 when there really is no difference. Here, that would mean concluding men have more diabetes when they actually don't. Using α = 0.05 means that if there were truly no difference, we would still get a "significant" result about 5% of the time. Our p-value is far below 0.05, so this result is unlikely to be a false positive, but it can't be ruled out completely.
+- **Type II error:** failing to reject H0 when there really is a difference. Since we did reject H0, we can't have made a Type II error in this analysis. It would have been more of a risk with fewer states or a smaller real difference.
+
+## Regression: obesity and diabetes
+
+Regression makes sense here as a follow-up question: **do states with higher adult obesity also have higher adult diabetes?** Both are age-adjusted 2022 BRFSS prevalences for the same 51 locations, so they line up one-to-one by state.
+
+- **Outcome:** diabetes prevalence (%)
+- **Predictor:** obesity prevalence (%)
+
+Since both variables are continuous, I used simple linear regression.
+
+```{r}
+obesity_overall <- cdi %>%
+  filter(Question == "Obesity among adults",
+         DataSource == "BRFSS",
+         YearStart == 2022,
+         DataValueType == "Age-adjusted Prevalence",
+         StratificationCategory1 == "Overall",
+         !LocationAbbr %in% c("US", "GU", "PR", "VI")) %>%
+  select(state = LocationAbbr, obesity = DataValue)
+
+state_data <- diabetes_overall %>%
+  select(state, LocationDesc, diabetes = prevalence) %>%
+  inner_join(obesity_overall, by = "state")
+
+nrow(state_data)
+summary(state_data$obesity)
+```
+
+```{r}
+ggplot(state_data, aes(x = obesity, y = diabetes)) +
+  geom_point(color = "#3D5A80", size = 2) +
+  geom_smooth(method = "lm", color = "#E07A5F") +
+  geom_text(aes(label = state), size = 2.5, vjust = -0.8) +
+  labs(title = "Adult obesity vs. diabetes prevalence by state, 2022",
+       x = "Obesity prevalence (%)", y = "Diabetes prevalence (%)") +
+  theme_minimal()
+```
+
+```{r}
+model <- lm(diabetes ~ obesity, data = state_data)
+summary(model)
+```
+
+```{r, include = FALSE}
+model_sum <- summary(model)
+slope <- coef(model)["obesity"]
+slope_p <- model_sum$coefficients["obesity", "Pr(>|t|)"]
+r2 <- model_sum$r.squared
+```
+
+### Checking model assumptions
+
+```{r, fig.height = 7}
+par(mfrow = c(2, 2))
+plot(model)
+par(mfrow = c(1, 1))
+
+shapiro_resid <- shapiro.test(resid(model))
+shapiro_resid
+```
+
+- **Linearity:** the scatterplot looks pretty linear overall. The red line in Residuals vs Fitted bends up a little at both ends, mostly because a few states (like Arkansas, Texas, Hawaii, and California) fall above the line. It's not a major pattern, so using a straight line still seems reasonable.
+- **Normal residuals:** the Q-Q plot follows the line pretty well, and the Shapiro-Wilk test on the residuals was not significant.
+- **Equal variance:** the Scale-Location plot shows that the spread is fairly similar across the fitted values.
+- **Influential points:** none of the points really stand out past the Cook's distance lines in the Residuals vs Leverage plot.
+- **Independence:** each state is treated as one observation. However, neighboring states can be similar to each other, which is something to keep in mind.
+
+### Interpreting the model
+
+
+- **Slope:** for every 1 percentage point increase in a state's obesity prevalence, diabetes prevalence was about **0.30 points higher** (p = **6.76 × 10⁻⁸**). So, a state with 10 points more obesity would be expected to have about **3.0 points more diabetes**.
+- **Intercept:** **0.00**. This is the predicted diabetes rate when obesity is 0%, which is way outside the range of our data, so it doesn't really have a useful meaning.
+- **Model fit:** R² = **0.45**, meaning obesity explains about **45%** of the differences in diabetes prevalence between states.
+
+This only shows an association at the state level, not that obesity directly causes diabetes. It also doesn't tell us what is happening with individual people (this is known as the ecological fallacy). Other factors like income, age, race/ethnicity, and access to healthcare probably explain some of the remaining differences.
+
+## Conclusions
+
+- In 2022, men had higher age-adjusted diabetes prevalence than women across the 51 locations (50 states + DC). The paired t-test showed that this difference was statistically significant (p = **1.77 × 10⁻⁸**), with men averaging about **1.22 percentage points higher** than women.
+- States with higher adult obesity prevalence also tended to have higher diabetes prevalence. Obesity explained about **45%** of the differences between states.
+
+## Limitations
+
+- BRFSS is a phone survey, and diabetes is **self-reported**, meaning people who have diabetes but haven't been diagnosed may not be included.
+- The values are **state estimates**, not individual data. Each estimate has its own margin of error (the confidence limit columns), which our tests don't account for.
+- The data don't separate type 1 and type 2 diabetes.
+- The data are only from one year (2022) and compare prevalence by sex, so we can't look at trends over time or explain exactly *why* men have higher rates.

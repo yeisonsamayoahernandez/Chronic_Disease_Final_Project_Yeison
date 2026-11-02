@@ -1,0 +1,106 @@
+AI PROMPTS USED IN THIS PROJECT
+================================
+
+Tool: Claude Code (Anthropic, Claude Opus 5.5)
+Date: November 2, 2026
+
+How AI was used: I gave the AI the prompt below along with the CDI dataset
+(export.csv). It inspected the data, helped me wrie the R Markdown
+notebook, and helped me understand the data. I reviewed
+the code, results, and written interpretations before submitting.
+
+No other prompts were used for this project.
+
+
+----------------------------------------------------------------------
+PROMPT 1
+----------------------------------------------------------------------
+
+Help me understand this CDC Chronic Disease Indicators dataset. Explain what the important columns represent and help me identify variables that could be useful for a research question.
+
+I want to investigate diabetes prevalence among men and women across U.S. states in 2022.
+
+Help me filter the dataset in R to select the relevant year, health indicator, data source, and sex categories. Explain what each filtering step does so I understand the code.
+
+----------------------------------------------------------------------
+PROMPT 2
+----------------------------------------------------------------------
+Help me calculate descriptive statistics for diabetes prevalence among men and women.
+
+Show me how to use group_by() and summarize() in dplyr to calculate the mean, standard deviation, and other useful summary statistics.
+
+Help me understand what these numbers tell me about the data.
+
+----------------------------------------------------------------------
+PROMPT 3
+----------------------------------------------------------------------
+Help me create a bar plot in R using ggplot2 that compares the average diabetes prevalence between men and women across states.
+
+I want the graph to have clear labels, a title, and error bars showing the variation in prevalence.
+
+Explain the ggplot code and what the graph tells me.
+
+----------------------------------------------------------------------
+PROMPT 4
+----------------------------------------------------------------------
+Help me create a histogram showing the distribution of diabetes prevalence across states.
+
+Help me choose an appropriate bin width and explain how to interpret the shape of the distribution.
+
+----------------------------------------------------------------------
+PROMPT 5
+----------------------------------------------------------------------
+Help me create a graph comparing diabetes prevalence between men and women within each state.
+
+I want to connect the two values for each state with a line so I can see which sex has a higher prevalence in each location.
+
+Help me use ggplot2 to make the graph readable and explain what patterns I should look for.
+
+----------------------------------------------------------------------
+PROMPT 6
+----------------------------------------------------------------------
+
+Help me determine whether diabetes prevalence differs between men and women across states.
+
+Since each state has a male and female estimate, help me understand how to perform a paired statistical test.
+
+Show me how to check the normality of the paired differences and decide whether a paired t-test or Wilcoxon signed-rank test is appropriate.
+
+Help me run the test in R and interpret the test statistic and p-value.
+
+----------------------------------------------------------------------
+PROMPT 7
+----------------------------------------------------------------------
+
+Help me calculate the difference in diabetes prevalence between men and women for each state.
+
+Create a bar chart showing the difference for each state, using a horizontal zero line to distinguish positive and negative differences.
+
+Help me interpret which states have higher prevalence among men and which have higher prevalence among women.
+
+----------------------------------------------------------------------
+PROMPT 8
+----------------------------------------------------------------------
+I also want to explore whether states with higher obesity prevalence tend to have higher diabetes prevalence.
+
+Help me prepare the data by matching obesity and diabetes estimates for the same states and year.
+
+Show me how to create a scatterplot with ggplot2 and add a linear regression line.
+
+Then help me run a simple linear regression using lm() and interpret the coefficient, p-value, and R-squared value.
+
+----------------------------------------------------------------------
+PROMPT 9
+----------------------------------------------------------------------
+
+Help me check whether my linear regression model meets the basic assumptions.
+
+Explain the four standard regression diagnostic plots in R and help me understand what I should look for in each one.
+
+----------------------------------------------------------------------
+PROMPT 10
+----------------------------------------------------------------------
+
+Help me review my R Markdown notebook to make sure the code runs in order, the graphs are labeled correctly, and the written interpretations match the statistical results.
+
+Point out anything that is unclear or needs improvement. Keep the explanations appropriate for an introductory R and statistics course.
